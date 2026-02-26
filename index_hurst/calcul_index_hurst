@@ -1,0 +1,90 @@
+import pandas as pd
+import numpy as np
+import yfinance as yf
+import numpy as np
+import matplotlib.pyplot as plt
+data_sp500 = yf.download("^GSPC", start="2000-01-01")
+prices = data_sp500["Close"]
+X = np.log(prices).diff().dropna().values.flatten()
+N= len(X)
+print("Número d'observacions N =", N)
+print("Primers 5 valors de X:", X[:5])
+print("Shape de X:", X.shape)
+
+# Pas 2: Definim els valors de n com potències decreixents de 2
+n_values = []
+n = N
+
+while n >= 16: # Per tal d'evitar finestres massa petites
+  n_values.append(n)
+  n = n // 2
+print("Valors de n:")
+print(n_values)
+
+# Pas 3: Dividir la sèrie en blocs
+for n in n_values:
+  num_blocks = N // n
+  print(f"Per n = {n}, nombre de blocs = {num_blocks}")
+# Pas 4: Calculem R/S per un sol bloc
+n = n_values[0]
+block = X[:n]
+
+m = np.mean(block)
+
+Y = block - m
+
+Z = np.cumsum(Y)
+
+R = np.max(Z) - np.min(Z)
+
+S = np.std(block)
+
+RS = R / S
+
+print("R =", R)
+print("S=", S)
+print("R/S =", RS)
+
+# PAS 5: Calculem R/S mitjà per cada n
+RS_means = []
+
+for n in n_values:
+  num_blocks = N // n
+  RS_values = []
+
+  for i in range(num_blocks):
+    start = i * n
+    end = start + n
+    block = X[start:end]
+
+    m = np.mean(block)
+    Y = block - m
+    Z = np.cumsum(Y)
+    R = np.max(Z) - np.min(Z)
+    S = np.std(block)
+
+    if S > 0:
+      RS_values.append(R / S)
+
+  RS_mean = np.mean(RS_values)
+  RS_means.append(RS_mean)
+
+print("R/S mitjans per cada n:")
+for n, rs in zip(n_values, RS_means):
+  print(f"n = {n}, R/S = {rs}")
+# PAS 6: Ajust log-log i estimació de l'exponent de Hurst
+log_n = np.log(n_values)
+log_RS = np.log(RS_means)
+
+coeffs = np.polyfit(log_n, log_RS, 1)
+H = coeffs[0]
+
+print("Exponent de Hurst (H) =", H)
+
+plt.figure(figsize=(8,6))
+plt.scatter(log_n, log_RS)
+plt.plot(log_n, np.polyval(coeffs, log_n), color='red')
+plt.xlabel("log(n)")
+plt.ylabel("log(R/S)")
+plt.title("Estimació de l'exponent de Hurst")
+plt.show()
