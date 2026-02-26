@@ -1,0 +1,106 @@
+from AlgorithmImports import *
+import math
+
+class MultiAssetFibonacciNoRebalance(QCAlgorithm):
+
+    def Initialize(self):
+        self.SetStartDate(2020, 1, 1)
+        self.SetEndDate(2024, 1, 1)
+        self.SetCash(100000)
+
+        self.resolution = Resolution.HOUR
+        self.lookback = 168         
+        self.tol = 0.02             
+
+        tickers = ["SPY", "AAPL", "MSFT", "NVDA", "SAN"] 
+        self.symbols = []
+        self.windows = {}            
+
+        for t in tickers:
+            sym = self.AddEquity(t, self.resolution).Symbol
+            self.symbols.append(sym)
+            self.windows[sym] = RollingWindow[TradeBar](self.lookback)
+
+        self.SetWarmUp(self.lookback)
+
+        self.bucket_cash = {sym: 20000.0 for sym in self.symbols}
+        self.bucket_qty  = {sym: 0 for sym in self.symbols}
+
+    def OnData(self, data: Slice):
+        if self.IsWarmingUp:
+            return
+
+        for sym in self.symbols:
+            if sym not in data or data[sym] is None:
+                continue
+
+            self.windows[sym].Add(data[sym])
+            if not self.windows[sym].IsReady:
+                continue
+
+            history = list(self.windows[sym])
+
+            high_val = -1.0
+            low_val = 999999999.0
+            high_index = 0
+            low_index = 0
+
+            for i in range(len(history)):
+                bar = history[i]
+                if bar.High > high_val:
+                    high_val = float(bar.High)
+                    high_index = i
+                if bar.Low < low_val:
+                    low_val = float(bar.Low)
+                    low_index = i
+
+            price = float(self.Securities[sym].Price)
+            if price <= 0:
+                continue
+
+            diff = high_val - low_val
+            if diff <= 0:
+                continue
+
+            invested = (self.bucket_qty[sym] != 0)
+
+            if low_index > high_index:
+                fib_618 = high_val - (diff * 0.618)
+
+                if (not invested):
+                    if price <= fib_618 * (1 + self.tol) and price >= fib_618 * (1 - self.tol):
+                        cash = self.bucket_cash[sym]
+                        qty = int(math.floor(cash / price))
+                        if qty <= 0:
+                            continue
+
+                        self.MarketOrder(sym, qty)
+
+                        spent = qty * price
+                        self.bucket_cash[sym] = cash - spent
+                        self.bucket_qty[sym] = qty
+
+                        self.Debug(f"BUY {sym.Value} | {self.Time} | price={price:.2f} fib={fib_618:.2f} qty={qty} bucketCashLeft={self.bucket_cash[sym]:.2f}")
+
+            elif high_index > low_index:
+                fib_618 = low_val + (diff * 0.618)
+
+                if invested:
+                    if price >= fib_618 * (1 - self.tol):
+                        qty = self.bucket_qty[sym]
+                        if qty <= 0:
+                            continue
+
+                        self.MarketOrder(sym, -qty)
+
+                        proceeds = qty * price
+                        self.bucket_cash[sym] += proceeds
+                        self.bucket_qty[sym] = 0
+
+                        self.Debug(f"SELL {sym.Value} | {self.Time} | price={price:.2f} fib={fib_618:.2f} qty={qty} newBucketCash={self.bucket_cash[sym]:.2f}")
+
+    def OnEndOfAlgorithm(self):
+        for sym in self.symbols:
+            price = float(self.Securities[sym].Price) if self.Securities.ContainsKey(sym) else 0.0
+            total = self.bucket_cash[sym] + self.bucket_qty[sym] * price
+            self.Debug(f"RESULT {sym.Value}: bucketCash={self.bucket_cash[sym]:.2f} qty={self.bucket_qty[sym]} lastPrice={price:.2f} total={total:.2f}")
