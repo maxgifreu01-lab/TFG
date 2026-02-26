@@ -1,0 +1,39 @@
+from AlgorithmImports import *
+
+class RSIHourlyStrategy(QCAlgorithm):
+
+    def Initialize(self):
+        self.SetStartDate(2020, 1, 1)  
+        self.SetEndDate(2024, 1, 1)    
+        self.SetCash(100000)           
+
+        self.symbol = self.AddEquity("AAPL", Resolution.HOUR).Symbol
+
+        self.rsi_period = 14
+        self.rsi = self.RSI(
+            self.symbol,
+            self.rsi_period,
+            MovingAverageType.WILDERS,
+            Resolution.HOUR
+        )
+
+        self.oversold_level = 30   
+        self.overbought_level = 70 
+
+        self.SetWarmUp(self.rsi_period)
+
+    def OnData(self, data):
+        if not self.rsi.IsReady or not data.ContainsKey(self.symbol):
+            return
+
+        current_rsi = self.rsi.Current.Value
+
+        if not self.Portfolio.Invested:
+            if current_rsi < self.oversold_level:
+                self.SetHoldings(self.symbol, 1.0)  
+                self.Debug(f"SENYAL DE COMPRA a {self.Time}: RSI és {current_rsi:.2f} (< 30)")
+
+        elif self.Portfolio.Invested:
+            if current_rsi > self.overbought_level:
+                self.Liquidate(self.symbol) 
+                self.Debug(f"SENYAL DE VENDA a {self.Time}: RSI és {current_rsi:.2f} (> 70)")

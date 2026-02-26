@@ -1,0 +1,60 @@
+# region imports
+from AlgorithmImports import *
+import numpy as np
+# endregion
+
+
+class HurstFixedBucketStrategy(QCAlgorithm):
+
+    def Initialize(self):
+        self.SetStartDate(2020, 1, 1)
+        self.SetEndDate(2024, 1, 1)
+        self.SetCash(100000)
+
+        tickers = ["SPY", "AAPL", "MSFT", "NVDA", "SAN"]  
+        self.symbols = [self.AddEquity(t, Resolution.Daily).Symbol for t in tickers]
+
+        self.lookback = 100
+        self.h_up = 0.55
+        self.h_down = 0.45
+        self.fixed_weight = 1.0 / len(self.symbols)
+
+        self.windows = {
+            sym: RollingWindow[float](self.lookback)
+            for sym in self.symbols
+        }
+
+        self.state_long = {sym: False for sym in self.symbols}
+
+        self.SetWarmUp(self.lookback)
+
+    def OnData(self, data: Slice):
+
+        for sym in self.symbols:
+            if data.ContainsKey(sym) and data[sym] is not None:
+                self.windows[sym].Add(float(data[sym].Close))
+
+        if self.IsWarmingUp:
+            return
+
+        for sym in self.symbols:
+            w = self.windows[sym]
+            if not w.IsReady:
+                continue
+
+            prices = np.array([w[i] for i in range(w.Count)], dtype=float)[::-1]
+            H = self.CalculateHurst(prices)
+
+            if H > self.h_up:
+                self.state_long[sym] = True
+            elif H < self.h_down:
+                self.state_long[sym] = False
+
+            target = self.fixed_weight if self.state_long[sym] else 0.0
+            self.SetHoldings(sym, target)
+
+    def CalculateHurst(self, ts: np.ndarray) -> float:
+        lags = range(2, 20)
+        tau = [np.std(ts[lag:] - ts[:-lag]) for lag in lags]
+        poly = np.polyfit(np.log(list(lags)), np.log(tau), 1)
+        return float(poly[0] * 2.0)

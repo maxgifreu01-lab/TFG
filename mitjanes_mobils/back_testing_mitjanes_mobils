@@ -1,0 +1,42 @@
+# region imports
+from AlgorithmImports import *
+
+class BollingerBandsStrategy(QCAlgorithm):
+
+    def Initialize(self):
+        self.SetStartDate(2020, 1, 1)
+        self.SetEndDate(2024, 1, 1)
+        self.SetCash(100000)
+
+        self.symbol = self.AddEquity("SPY", Resolution.HOUR).Symbol
+
+        self.bb = self.BB(self.symbol, 20, 2, MovingAverageType.SIMPLE, Resolution.HOUR)
+
+        self.SetWarmUp(20)
+
+    def OnData(self, data):
+        if not self.bb.IsReady:
+            return
+
+        if not data.ContainsKey(self.symbol) or data[self.symbol] is None:
+            return
+
+        price = self.Securities[self.symbol].Close
+
+        upper_band = self.bb.UpperBand.Current.Value
+        lower_band = self.bb.LowerBand.Current.Value
+
+        if upper_band == lower_band:
+            return
+
+        percent_b = (price - lower_band) / (upper_band - lower_band)
+
+        if not self.Portfolio.Invested:
+            if percent_b < 0:
+                self.SetHoldings(self.symbol, 1.0)
+                self.Debug(f"COMPRA a {self.Time}: Preu {price} sota la Banda Inferior (%b: {percent_b:.2f})")
+
+        elif self.Portfolio.Invested:
+            if percent_b > 1:
+                self.Liquidate(self.symbol)
+                self.Debug(f"VENDA a {self.Time}: Preu {price} sobre la Banda Superior (%b: {percent_b:.2f})")

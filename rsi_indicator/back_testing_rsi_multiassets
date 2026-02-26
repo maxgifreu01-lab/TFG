@@ -1,0 +1,49 @@
+from AlgorithmImports import *
+
+class RSIHourly5AssetsEqualWeight(QCAlgorithm):
+
+    def Initialize(self):
+        self.SetStartDate(2020, 1, 1)
+        self.SetEndDate(2024, 1, 1)
+        self.SetCash(100000)
+
+        self.rsi_period = 14
+        self.oversold_level = 30
+        self.overbought_level = 70
+
+        tickers = ["SPY", "SAN", "MSFT", "NVDA", "AAPL"]
+        self.weight = 0.20
+
+        self.symbols = []
+        self.rsis = {}
+
+        for t in tickers:
+            symbol = self.AddEquity(t, Resolution.HOUR).Symbol
+            self.symbols.append(symbol)
+
+            rsi = self.RSI(symbol, self.rsi_period, MovingAverageType.WILDERS, Resolution.HOUR)
+            self.rsis[symbol] = rsi
+
+        self.SetWarmUp(self.rsi_period)
+
+    def OnData(self, data):
+        if self.IsWarmingUp:
+            return
+
+        for symbol in self.symbols:
+            if symbol not in data or data[symbol] is None:
+                continue
+            if not self.rsis[symbol].IsReady:
+                continue
+
+            current_rsi = self.rsis[symbol].Current.Value
+
+            invested = self.Portfolio[symbol].Invested
+
+            if not invested and current_rsi < self.oversold_level:
+                self.SetHoldings(symbol, self.weight)
+                self.Debug(f"COMPRA {symbol.Value} | {self.Time} | RSI={current_rsi:.2f} -> target {self.weight:.0%}")
+
+            elif invested and current_rsi > self.overbought_level:
+                self.Liquidate(symbol)
+                self.Debug(f"VENTA {symbol.Value} | {self.Time} | RSI={current_rsi:.2f} -> liquidate")

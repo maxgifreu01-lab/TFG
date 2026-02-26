@@ -1,0 +1,63 @@
+# region imports
+from AlgorithmImports import *
+
+class FibonacciAlgorithm(QCAlgorithm):
+
+    def Initialize(self):
+        self.SetStartDate(2020, 1, 1)
+        self.SetEndDate(2024, 1, 1)
+        self.SetCash(100000)
+        self.symbol = self.AddEquity("AAPL", Resolution.HOUR).Symbol
+        self.lookback = 168
+        self.window = RollingWindow[TradeBar](self.lookback)
+
+        self.SetWarmUp(self.lookback)
+
+    def OnData(self, data):
+        if not data.ContainsKey(self.symbol) or data[self.symbol] is None:
+            return
+
+        self.window.Add(data[self.symbol])
+
+        if not self.window.IsReady:
+            return
+
+        history = list(self.window)
+
+        high_val = -1.0
+        low_val = 999999.0
+        high_index = 0
+        low_index = 0
+
+        for i in range(len(history)):
+            bar = history[i]
+            if bar.High > high_val:
+                high_val = bar.High
+                high_index = i
+            if bar.Low < low_val:
+                low_val = bar.Low
+                low_index = i
+
+        price = self.Securities[self.symbol].Close
+        diff = high_val - low_val
+
+        if diff <= 0:
+            return
+
+        if low_index > high_index:
+
+            fib_618 = high_val - (diff * 0.618)
+
+            if not self.Portfolio.Invested:
+                if price <= fib_618 * 1.01 and price >= fib_618 * 0.99:
+                    self.SetHoldings(self.symbol, 1.0)
+                    self.Debug(f"COMPRA (Fib 61.8%): Preu {price} prop de suport {fib_618:.2f}")
+
+        elif high_index > low_index:
+
+            fib_618 = low_val + (diff * 0.618)
+
+            if self.Portfolio.Invested:
+                if price >= fib_618 * 0.99:
+                    self.Liquidate(self.symbol)
+                    self.Debug(f"VENDA (Fib 61.8%): Preu {price} prop de resistència {fib_618:.2f}")

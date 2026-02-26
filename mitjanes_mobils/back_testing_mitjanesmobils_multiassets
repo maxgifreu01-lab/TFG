@@ -1,0 +1,77 @@
+from AlgorithmImports import *
+import math
+
+class MultiAssetBollingerNoRebalance(QCAlgorithm):
+
+    def Initialize(self):
+        self.SetStartDate(2020, 1, 1)
+        self.SetEndDate(2024, 1, 1)
+        self.SetCash(100000)
+
+        self.res = Resolution.HOUR
+
+        tickers = ["SPY", "AAPL", "MSFT", "NVDA", "SAN"]  
+        self.symbols = []
+
+        for t in tickers:
+            sym = self.AddEquity(t, self.res).Symbol
+            self.symbols.append(sym)
+
+        self.bb = {} 
+        for sym in self.symbols:
+            self.bb[sym] = self.BB(sym, 20, 2, MovingAverageType.SIMPLE, self.res)
+
+        self.SetWarmUp(20)
+
+        self.bucket_cash = {sym: 20000.0 for sym in self.symbols}  
+        self.bucket_qty  = {sym: 0 for sym in self.symbols}        
+
+        self.last_action = {sym: None for sym in self.symbols}
+
+
+    def OnData(self, data: Slice):
+        if self.IsWarmingUp:
+            return
+
+        for sym in self.symbols:
+            if sym not in data or data[sym] is None:
+                continue
+            if not self.bb[sym].IsReady:
+                continue
+
+            price = float(self.Securities[sym].Price)
+            if price <= 0:
+                continue
+
+            upper_band = float(self.bb[sym].UpperBand.Current.Value)
+            lower_band = float(self.bb[sym].LowerBand.Current.Value)
+
+            if upper_band == lower_band:
+                continue
+
+            percent_b = (price - lower_band) / (upper_band - lower_band)
+
+            invested = (self.bucket_qty[sym] != 0)
+            if (not invested) and (percent_b < 0):
+                cash = self.bucket_cash[sym]
+                qty = int(math.floor(cash / price))
+                if qty <= 0:
+                    continue
+                self.MarketOrder(sym, qty)
+                spent = qty * price
+                self.bucket_cash[sym] = cash - spent
+                self.bucket_qty[sym] = qty
+
+                self.Debug(f"BUY {sym.Value} | {self.Time} | Price={price:.2f} | %b={percent_b:.2f} | Qty={qty} | BucketCashLeft={self.bucket_cash[sym]:.2f}")
+
+            elif invested and (percent_b > 1):
+                qty = self.bucket_qty[sym]
+                if qty == 0:
+                    continue
+                self.MarketOrder(sym, -qty)
+
+                proceeds = qty * price
+                self.bucket_cash[sym] += proceeds
+                self.bucket_qty[sym] = 0
+
+                self.Debug(f"SELL {sym.Value} | {self.Time} | Price={price:.2f} | %b={percent_b:.2f} | Qty={qty} | NewBucketCash={self.bucket_cash[sym]:.2f}")
