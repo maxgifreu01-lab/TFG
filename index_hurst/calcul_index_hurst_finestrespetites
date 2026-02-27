@@ -1,0 +1,68 @@
+import pandas as pd
+import numpy as np
+import yfinance as yf
+import numpy as np
+import matplotlib.pyplot as plt
+# 1) Descarga de dades
+ticker_5 = "AAPL"  
+data = yf.download(ticker_5, start="2015-01-01", progress=False)
+prices = data["Close"].dropna()
+
+# 2) Serie sobre la que calculem Hurst 
+X = np.log(prices).diff().dropna().values
+N = len(X)
+
+# 3) Es defineix les finestres que es vol provar 
+n_values = [16, 32, 64, 128, 256, 512]  
+
+# Establim un mínim de blocs perque sigui més fiable
+min_blocks = 10 
+
+used_n = []
+RS_means = []
+
+for n in n_values:
+    num_blocks = N // n
+    if num_blocks < min_blocks:
+        continue
+
+    RS_vals = []
+    for i in range(num_blocks):
+        block = X[i*n:(i+1)*n]
+        m = np.mean(block)
+        Y = block - m
+        Z = np.cumsum(Y)
+        R = np.max(Z) - np.min(Z)
+        S = np.std(block, ddof=1)  
+
+        if S > 0:
+            RS_vals.append(R / S)
+
+    if len(RS_vals) > 0:
+        used_n.append(n)
+        RS_means.append(np.mean(RS_vals))
+
+# 4) Estimar H (pendent de log(R/S) vs log(n))
+log_n = np.log(used_n)
+log_RS = np.log(RS_means)
+
+H, c = np.polyfit(log_n, log_RS, 1)
+y_hat = H * log_n + c
+
+# R^2 
+ss_res = np.sum((log_RS - y_hat) ** 2)
+ss_tot = np.sum((log_RS - np.mean(log_RS)) ** 2)
+r2 = 1 - ss_res / ss_tot if ss_tot > 0 else np.nan
+
+print(f"Ticker: {ticker_5}")
+print(f"Hurst (R/S) = {H:.4f} | R^2 = {r2:.4f}")
+print("Ventanas usadas:", used_n)
+
+
+plt.figure()
+plt.plot(log_n, log_RS, marker="o", linestyle="")
+plt.plot(log_n, y_hat, linestyle="-")
+plt.xlabel("log(n)")
+plt.ylabel("log(R/S)")
+plt.title(f"Hurst R/S - {ticker_5} (H={H:.3f}, R^2={r2:.3f})")
+plt.show()
