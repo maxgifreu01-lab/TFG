@@ -1,0 +1,102 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+def cholesky_fbm(n, H):
+
+    matrix = np.zeros((n, n))
+    for i in range(n):
+        ti = (i + 1) / n
+        for j in range(n):
+            tj = (j + 1) / n
+            matrix[i, j] = 0.5 * (ti**(2*H) + tj**(2*H) - abs(ti - tj)**(2*H))
+    return np.linalg.cholesky(matrix)
+
+n = 1000
+
+
+W03 = np.random.normal(0, 1, n)
+W05 = np.random.normal(0, 1, n)
+W07 = np.random.normal(0, 1, n)
+
+U = cholesky_fbm(n, 0.3) @ W03
+X = cholesky_fbm(n, 0.5) @ W05
+Z = cholesky_fbm(n, 0.7) @ W07
+
+print("Simulated paths created:")
+print("U shape:", U.shape, "X shape:", X.shape, "Z shape:", Z.shape)
+print("First 3 values U:", U[:3])
+print("First 3 values X:", X[:3])
+print("First 3 values Z:", Z[:3])
+
+dU = np.diff(U)
+dX = np.diff(X)
+dZ = np.diff(Z)
+
+print("Shapes after diff:")
+print("dU:", dU.shape)
+print("dX:", dX.shape)
+print("dZ:", dZ.shape)
+
+print("First 5 increments dU:", dU[:5])
+
+def hurst_rs(X, min_window=16, plot=True):
+
+    X = np.asarray(X).flatten()
+    N = len(X)
+
+    n_values = []
+    n = N
+    while n >= min_window:
+        n_values.append(n)
+        n = n // 2
+
+    RS_means = []
+
+    for n in n_values:
+
+        num_blocks = N // n
+        RS_values = []
+
+        for i in range(num_blocks):
+
+            start = i * n
+            end = start + n
+            block = X[start:end]
+
+            m = np.mean(block)
+            Y = block - m
+            Z = np.cumsum(Y)
+
+            R = np.max(Z) - np.min(Z)
+            S = np.std(block)
+
+            if S > 0:
+                RS_values.append(R / S)
+
+        RS_means.append(np.mean(RS_values))
+
+    log_n = np.log(n_values)
+    log_RS = np.log(RS_means)
+
+    coeffs = np.polyfit(log_n, log_RS, 1)
+    H = coeffs[0]
+
+    if plot:
+        plt.figure(figsize=(7,5))
+        plt.scatter(log_n, log_RS)
+        plt.plot(log_n, np.polyval(coeffs, log_n))
+        plt.xlabel("log(n)")
+        plt.ylabel("log(R/S)")
+        plt.title("Hurst exponent estimation (R/S)")
+        plt.show()
+
+    return H
+
+H_U = hurst_rs(dU, plot=True)
+H_X = hurst_rs(dX, plot=True)
+H_Z = hurst_rs(dZ, plot=True)
+
+print("Results (R/S):")
+print("True H=0.3 -> H_hat =", H_U)
+print("True H=0.5 -> H_hat =", H_X)
+print("True H=0.7 -> H_hat =", H_Z)
