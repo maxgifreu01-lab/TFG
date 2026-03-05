@@ -1,0 +1,39 @@
+from AlgorithmImports import *
+
+class PortfolioEquallyWeighted(QCAlgorithm):
+
+    def Initialize(self):
+        self.SetStartDate(2020, 1, 1)
+        self.SetEndDate(2024, 1, 1)
+        self.SetCash(100000)
+
+        self.tickers = ["SPY", "AAPL", "MSFT", "NVDA", "SAN"]
+
+        for ticker in self.tickers:
+            self.AddEquity(ticker, Resolution.Daily)
+
+        self.invested = False
+
+    def OnData(self, data):
+
+        if not self.invested and self.Time.year == 2020:
+
+            # Calcular el peso por activo (100% / 5 = 20% = 0.2)
+            weight = 1.0 / len(self.tickers)
+
+            for ticker in self.tickers:
+
+                # Comprobamos que tenemos datos del activo antes de comprar
+                if data.ContainsKey(ticker) and data[ticker] is not None:
+                    self.SetHoldings(ticker, weight)
+
+            self.invested = True
+            self.Log(f"COMPRA: Se ha comprado un {weight*100}% de cada activo en {self.Time.date()}")
+
+        elif self.invested and self.Time.year == 2023 and self.Time.month == 12 and self.Time.day >= 27:
+
+            # Liquidar toda la cartera
+            self.Liquidate()
+
+            self.invested = False
+            self.Log(f"VENTA: Se ha vendido toda la cartera en {self.Time.date()}")
